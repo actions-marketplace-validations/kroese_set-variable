@@ -1,6 +1,18 @@
 {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base",
+    "config:recommended",
     ":disableDependencyDashboard"
-  ]
+  ],
+  "packageRules": [
+    {
+      "groupName": "devDeps",
+      "description": "Automerge updates of devDeps",
+      "automerge": true,
+      "automergeType": "branch",
+      "matchDepTypes": ["devDependencies"],
+      "schedule": ["on the first day of the month"]
+    }
+  ],
+  "forkProcessing": "enabled"
 }

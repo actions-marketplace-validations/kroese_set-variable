@@ -1,141 +1,133 @@
-const github = require("@actions/github");
 const core = require("@actions/core");
+const github = require("@actions/github");
 
-const name = core.getInput("name");
-const value = core.getInput("value");
 const token = core.getInput("token");
+const octokit = github.getOctokit(token);
 
-const { Octokit } = require("@octokit/rest")
-const octokit = new Octokit({ auth: token })
+const name = input("name", "");
+const value = core.getInput("value");
 
-const context = github.context;
-const repoName = context.payload.repository.name;
-const ownerName = context.payload.repository.owner.login;
+const visibility = input("visibility", "all");
+const push_to_org = (input("org", "") !== "");
+const owner = input("owner", github.context.payload.repository.owner.login);
+const repository = input("repository", github.context.payload.repository.name);
 
-let repository = core.getInput("repository");
-if(repository === 'false'){
-  repository = repoName;
+function path_() {
+
+  if (push_to_org) return "/orgs/" + owner;
+  if (repository.includes("/")) return "/repos/" + repository;
+
+  return "/repos/" + owner + "/" + repository;
+
 }
 
-let owner = core.getInput("owner");
-if(owner === 'false'){
-  owner = ownerName;
-}
+function input(name, def) {
 
-let push_to_org = (core.getInput("org") !== 'false');
+  let inp = core.getInput(name).trim();
+  if (inp === "" || inp.toLowerCase() === "false") return def;
 
-function get_() {
-
-  if(push_to_org) {
-    return '/orgs/' + owner;
-  }
-  else {
-    if(repository.includes("/"))
-    {
-      return '/repos/' + repository;
-    }
-    return '/repos/' + owner + '/' + repository;
-  }
+  return inp;
 
 }
 
 const createVariable = (data) => {
 
-  let url = 'POST '
-  url += get_()
-  url += '/actions/variables'
+  let url = "POST " + path_();
+  url += "/actions/variables";
+
+  if (push_to_org) {
+    return octokit.request(url, {
+      name: name,
+      visibility: visibility,
+      value: data
+    });
+  }
 
   return octokit.request(url, {
-  owner: owner,
-  repo: repository,
-  name: name,
-  value: data } )
-  
-}
+    name: name,
+    value: data
+  });
+};
 
 const setVariable = (data) => {
 
-  let url = 'PATCH '
-  url += get_()
-  url += '/actions/variables/' + name
+  let url = "PATCH " + path_();
+  url += "/actions/variables/" + name;
 
   return octokit.request(url, {
-  owner: owner,
-  repo: repository,
-  name: name,
-  value: data } )
-  
-}
+    name: name,
+    value: data
+  });
+};
 
 const getVariable = (varname) => {
 
-  let url = 'GET '
-  url += get_()
-  url += '/actions/variables/' + name
-  
-  return octokit.request(url, {
-  owner: owner,
-  repo: repository,
-  name: varname } )
-  
-}
+  let url = "GET " + path_();
+  url += "/actions/variables/" + varname;
 
-const boostrap = async () => {
-  
-  let exists = false
-  
+  return octokit.request(url);
+};
+
+const bootstrap = async () => {
+
+  let exists = false;
+
   try {
-    
-    const response = await getVariable(name)
-  
-    exists = (response.status === 200) 
+
+    const response = await getVariable(name);
+    exists = response.status === 200;
 
   } catch (e) {
     // Variable does not exist
   }
-  
+
   try {
-    
-    if(exists) {
-       
-       const response = await setVariable(value)
-       
-       if(response.status === 204) {
-          return "Succesfully updated variable.."
-       }
-      
-      throw new Error("Wrong response: " + response.status)
-      
-    }
-    else
-    {
-      
-      const response = await createVariable(value)
-      
-      if(response.status === 201) {
-          return "Succesfully created variable.."
-       }
-      
-      throw new Error("Wrong response: " + response.status)
+
+    if (name === "") {
+      throw new Error("No name was specified!");
     }
 
-  }catch (e) {
-    core.setFailed(get_() + ": " + e.message);
+    if (exists) {
+
+      const response = await setVariable(value);
+
+      if (response.status === 204) {
+        return "Successfully updated variable " + name + " to '" + value + "'.";
+      }
+
+      throw new Error("ERROR: Wrong status was returned: " + response.status);
+
+    } else {
+
+      const response = await createVariable(value);
+
+      if (response.status === 201) {
+        return "Successfully created variable " + name + " with value '" + value + "'.";
+      }
+
+      throw new Error("ERROR: Wrong status was returned: " + response.status);
+
+    }
+
+  } catch (e) {
+    core.setFailed(path_() + ": " + e.message);
+    console.error(e);
   }
-}
+};
 
-boostrap()
+bootstrap()
   .then(
-    result => {
+    (result) => {
       // eslint-disable-next-line no-console
-      if(result != null) {
+      if (result != null) {
         console.log(result);
       }
     },
-    err => {
+    (err) => {
       // eslint-disable-next-line no-console
       core.setFailed(err.message);
-    }
+      console.error(err);
+    },
   )
   .then(() => {
     process.exit();
